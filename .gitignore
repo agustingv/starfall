@@ -1,0 +1,14 @@
+# Meson build directory
+/build/
+/builddir/
+
+# Downloaded / extracted subprojects (only the .wrap and packagefiles are tracked)
+/subprojects/*/
+!/subprojects/packagefiles/
+/subprojects/packagecache/
+/subprojects/wrapdb.json
+
+# Editor / OS cruft
+*.swp
+*~
+.DS_Store
