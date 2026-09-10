@@ -43,11 +43,19 @@ used instead.
 | Fullscreen | F | – |
 | Initials entry | type A–Z, or Up/Down + Left/Right, Enter | D-pad + A |
 | Quit   | **Exit** on the title, or the window close button | – |
+| _Dev:_ godmode toggle | F10 | – |
+
+**Dev godmode.** `Player.hit()` is a no-op while `player.godmode` is set — for
+walking every level and the ending without dying. Start it on with
+`STARFALL_GODMODE=1` (anything but unset / `0` / `false`), or toggle it any time
+with **F10**; a magenta `GODMODE` tag shows in the HUD corner while it's active.
 
 The title menu is **Play** (new campaign at 1-1), **Scores** (the high-score
-table), and **Exit**. When a run ends — game over or victory — a score that
-makes the top 10 gets an arcade initials-entry screen, then the table; either
-way it returns to the title afterwards.
+table), **Settings** (sound-effects volume — left/right adjust — plus reference
+panels: controls, the enemy-drop legend, and the craft count each stage
+releases, from `SectionScript.enemy_count()`), and **Exit**. When a run ends — game over or victory — a score
+that makes the top 10 gets an arcade initials-entry screen, then the table;
+either way it returns to the title afterwards.
 
 ## Layout
 
@@ -68,15 +76,17 @@ src/
   title_screen.vala          TitleScreen: story, starfield, Play / Scores / Exit
   play_screen.vala           PlayScreen: the campaign — world + phase machine
   score_screen.vala          ScoreScreen: the high-score table from the menu
+  settings_screen.vala       SettingsScreen: sfx volume slider + controls list
+  settings.vala              Settings: persisted prefs (~/.config/starfall/…)
   level.vala                 campaign text, SectionScript, Formations
   boss.vala                  Boss: one parameterised craft, scaled per level
   scores.vala                HighScores: top-10 table, load / save / draw
   entity.vala                Config tunables, Input struct, Entity base, Palette
   player.vala                ship movement, cannon, lives, invulnerability
-  bullet.vala                Bullet + BulletPool (incl. guided-missile homing)
+  bullet.vala                Bullet + BulletPool (homing, pierce, splash)
   enemy.vala                 Enemy (8 kinds, per-level roster) + EnemyPool
   beam.vala                  EnemyBeam + EnemyBeamPool (the SENTINEL's laser)
-  special.vala               MissilePool (special weapon) + PickupPool (recharges)
+  special.vala               MissilePool (bomb swarm) + Pickup/PickupPool (power-ups)
   starfield.vala             parallax background
   planet.vala                per-level backdrop world (Titan .. Earth)
   assets.vala                Assets: loads the sprite atlas, blits named regions
@@ -135,7 +145,10 @@ python3 tools/gen_sounds.py
 
 `Audio` (in `audio.vala`) loads them after the audio device comes up, giving
 each effect four raylib *sound aliases* it cycles round-robin so rapid fire
-overlaps cleanly. `play (name, pitch_jitter, volume)` is the only entry point.
+overlaps cleanly. `play (name, pitch_jitter, volume)` is the only entry point;
+every instance is scaled by `Audio.sfx_volume`, which the **Settings** menu
+drives and `Settings` (`settings.vala`) persists to
+`$STARFALL_SETTINGS` / `$XDG_CONFIG_HOME/starfall/settings.txt`.
 Folder search mirrors the sprites: `$STARFALL_SOUNDS`, `./assets/sounds`, next
 to / above the exe, `<prefix>/share/starfall/sounds`. **No files or no audio
 device → the game just runs silent.** Replace the WAVs in place (same names) to
@@ -180,10 +193,12 @@ via `HighScores.draw_table(highlight_row)`.
   `Config.SECTIONS_PER_LEVEL` set the shape.
 - **Sections.** A section is a `SectionScript` — a timed list of `SpawnEvent`s
   (`at`, `Formation`, `EnemyKind`). It's cleared once every event has fired and
-  no enemies remain. Only the *scaling* is authored right now (`bursts` / `gap`
-  off the level+section index); swap the `SectionScript` body for a real
-  per-section timeline when you design levels. `Formations.spawn()` maps a
-  `Formation` to positions.
+  no enemies remain. Only the *scaling* is authored right now: wave count
+  `burst_count()` = `min(3 + level + section, MAX_BURSTS=8)` (capped so late
+  stages plateau instead of walling you off) and `gap` shrinks with level but
+  floors at 1.4 s. Swap the `SectionScript` body for a real per-section timeline
+  when you design levels. `Formations.spawn()` maps a `Formation` to positions;
+  `Formations.size()` / `SectionScript.enemy_count()` report the totals.
 - **Enemies.** Eight kinds (`enemy.vala`), each with its own movement and
   weapon: GRUNT/DARTER/WEAVER/BRUTE fire plasma bolts (single, burst, angled
   pair, three-way spread); SENTINEL parks in a hold band and fires a charged
@@ -191,18 +206,31 @@ via `HighScores.draw_table(highlight_row)`.
   its aim); HUNTER and WARDEN launch **guided missiles** that home on the player
   and can be shot down by player fire (+25). `SectionScript.roster(level)` sets
   which kinds a level draws from, so every stage fights differently.
-- **Bosses.** One `Boss` class, `spawn(level)` scales hp / fire rate / colour.
-  Cycles four patterns (spread, spiral, aimed burst, homing missiles); missiles
-  home via `BulletPool` like the enemy craft. Boss shots reuse the normal
-  `BulletPool`.
-- **Special weapon.** `Player` starts with `SPECIAL_MAX` (2) charges. `X` /
-  Left Shift spends one: `PlayScreen.launch_special()` fires a `MissilePool`
-  swarm — one homing missile per on-screen enemy (capped at 28) plus a few
-  unguided ones — and `Player.use_special()` grants 3 s of immunity. Missiles
-  do 1 damage to a boss. Destroyed enemies have a `Config.SPECIAL_DROP_PCT`
-  (12%) chance to drop a `Pickup`; touching one calls `add_special_charge()`
-  (capped at `SPECIAL_MAX`), collectible even while immune. Missile-kills don't
-  drop pickups, so a bomb can't refill itself.
+- **Bosses.** One `Boss` class, but `spawn(level)` picks a wholly different
+  fight per level — its own silhouette (`boss_1..boss_5`, distinct hulls from
+  `BOSS_SHAPE` in `gen_sprites.py`), movement (`move()`: edge-dwelling glide /
+  lateral charges / x-mirroring / near-stationary / figure-eight), weapon set
+  (`fire_warden` … `fire_throne`: wide fans + curtains / spiral + rings / aimed
+  rivet streams + seekers / charged laser + mortars / the lot, unlocked over 3
+  hp `phase()`s), and toughness (75 → 230 hp). Bolts and rings reuse
+  `BulletPool`; the level-4/5 laser reuses `EnemyBeamPool.spawn_from()`; missiles
+  home like the enemy craft.
+- **Power-up drops.** Killing an enemy has a `Config.POWERUP_DROP_PCT` (8%)
+  chance to drop a `Pickup`; `Pickups.random_kind()` rolls the type. Collected
+  even while immune, dispatched by `PlayScreen.collect_pickup()`:
+  - **B** bomb — a `SPECIAL_MAX`-capped special charge (see below).
+  - **+** shield — `SHIELD_TIME` (6 s) of `damage_immune`, drawn as a bubble.
+  - **W / R / M** weapon — swaps `Player.weapon` for `WEAPON_TIME` (15 s), then
+    reverts to `BLASTER` (also on death). `Player.fire()` branches on it:
+    `SPREAD` (5 splash pellets, `Bullet.aoe`), `RAIL` (one fast `Bullet.pierce`
+    slug, `damage 3`), `HOMING` (seekers — `missile` player bullets that
+    `BulletPool.nearest_target()` steers onto the closest enemy/boss).
+- **Special weapon / bomb.** `Player` starts with `SPECIAL_MAX` (2) charges. `X`
+  / Left Shift spends one: `PlayScreen.launch_special()` wipes every hostile
+  shot (`BulletPool.clear_enemy()` + `beams.clear()`), fires a `MissilePool`
+  swarm (one homing missile per on-screen enemy, capped at 28, plus a few
+  unguided), and `Player.use_special()` grants 3 s of immunity. Missile-kills
+  don't drop pickups, so a bomb can't refill itself.
 - **Pools.** Bullets and enemies are pre-allocated arrays with an `active` flag.
   `spawn()` finds a free slot; nothing is allocated or freed during play. Bump
   `BulletPool.CAP` / `EnemyPool.CAP` if you need more on screen.

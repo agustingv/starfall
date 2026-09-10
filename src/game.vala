@@ -26,6 +26,7 @@ namespace Starfall {
 
             Assets.instance ();   // warm-load sprites, sounds and scores up front
             Audio.instance ();
+            Settings.instance (); // applies the saved sfx volume to Audio
             HighScores.instance ();
 
             screen = new TitleScreen (this);
@@ -66,6 +67,10 @@ namespace Starfall {
 
         public void goto_scores () {
             switch_to (new ScoreScreen (this));
+        }
+
+        public void goto_settings () {
+            switch_to (new SettingsScreen (this));
         }
 
         public void request_quit () {

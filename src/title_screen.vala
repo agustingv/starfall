@@ -9,7 +9,7 @@ namespace Starfall {
         int   selection = 0;
         float t = 0.0f;
 
-        const string[] OPTIONS = { "PLAY", "SCORES", "EXIT" };
+        const string[] OPTIONS = { "PLAY", "SCORES", "SETTINGS", "EXIT" };
 
         const string[] STORY = {
             "The Andromedans crossed the void and took the Earth.",
@@ -37,6 +37,7 @@ namespace Starfall {
                 switch (selection) {
                     case 0:  game.start_new_game (); break;
                     case 1:  game.goto_scores ();    break;
+                    case 2:  game.goto_settings ();  break;
                     default: game.request_quit ();   break;
                 }
             }
@@ -63,14 +64,14 @@ namespace Starfall {
                 y += 26;
             }
 
-            int menu_y = 470;
+            int menu_y = 452;
             for (int i = 0; i < OPTIONS.length; i++) {
                 bool sel = (i == selection);
                 int size = sel ? 30 : 26;
                 var color = sel ? Palette.YELLOW : Palette.LIGHTGRAY;
                 string label = sel ? @"> $(OPTIONS[i])  <" : OPTIONS[i];
                 draw_text_centered (label, menu_y, size, color);
-                menu_y += 52;
+                menu_y += 48;
             }
 
             if (((int) (t * 2.0)) % 2 == 0)

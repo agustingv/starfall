@@ -9,12 +9,18 @@ namespace Starfall {
         public bool from_player;
         public Raylib.Color color;
 
-        // Homing missiles (boss only): while steer_time lasts, the heading turns
-        // toward a target at `turn` rad/s, keeping the speed at `speed`.
+        // Homing missiles: while steer_time lasts, the heading turns toward a
+        // target at `turn` rad/s, keeping the speed at `speed`. Enemy / boss
+        // missiles chase the player; player missiles chase the nearest enemy.
         public bool  missile;
         public float speed;
         public float turn;
         public float steer_time;
+
+        // Player power-up shots.
+        public float damage = 1.0f;   // hp removed per hit
+        public int   pierce;          // extra enemies the shot passes through (railgun)
+        public float aoe;             // > 0: splash radius on impact (spread battery)
 
         public override void update (float dt) {
             pos.x += vel.x * dt;
@@ -52,6 +58,20 @@ namespace Starfall {
                 return;
             }
 
+            if (pierce > 0) {   // railgun slug: a bright vertical streak
+                Raylib.draw_rectangle_v ({ pos.x - 2.5f, pos.y - 15.0f }, { 5.0f, 30.0f },
+                                         Raylib.fade (Palette.SKYBLUE, 0.7f));
+                Raylib.draw_rectangle_v ({ pos.x - 1.0f, pos.y - 17.0f }, { 2.0f, 34.0f },
+                                         Palette.RAYWHITE);
+                return;
+            }
+
+            if (aoe > 0.0f) {   // spread-battery pellet
+                Raylib.draw_circle_v (pos, radius, Palette.ORANGE);
+                Raylib.draw_circle_v (pos, radius * 0.5f, Palette.YELLOW);
+                return;
+            }
+
             string sprite = from_player ? "bullet_player" : "bullet_enemy";
             float dest_h = radius * (from_player ? 4.5f : 3.2f);
             if (Assets.instance ().draw_sprite (sprite, pos, dest_h, 0.0f, Palette.WHITE))
@@ -77,6 +97,12 @@ namespace Starfall {
                 b.active = false;
         }
 
+        /* Wipe every hostile shot - used by the screen-clearing bomb. */
+        public void clear_enemy () {
+            foreach (var b in items)
+                if (b.active && !b.from_player) b.active = false;
+        }
+
         public Bullet? spawn (Raylib.Vector2 pos, Raylib.Vector2 vel,
                               bool from_player, float radius, Raylib.Color color) {
             foreach (var b in items) {
@@ -90,20 +116,54 @@ namespace Starfall {
                 b.speed       = 0.0f;
                 b.turn        = 0.0f;
                 b.steer_time  = 0.0f;
+                b.damage      = 1.0f;
+                b.pierce      = 0;
+                b.aoe         = 0.0f;
                 b.active      = true;
                 return b;
             }
             return null;
         }
 
-        public void update (float dt, Player player) {
+        public void update (float dt, Player player, EnemyPool enemies, Boss boss) {
             foreach (var b in items) {
                 if (!b.active) continue;
-                if (b.missile && !b.from_player)
-                    b.steer (player.pos, dt);   // boss / enemy guided missiles
+
+                if (b.missile) {
+                    if (b.from_player) {
+                        Raylib.Vector2 t;
+                        if (nearest_target (b.pos, enemies, boss, out t))
+                            b.steer (t, dt);
+                    } else {
+                        b.steer (player.pos, dt);   // boss / enemy guided missiles
+                    }
+                }
+
                 b.update (dt);
                 if (b.off_screen ()) b.active = false;
             }
+        }
+
+        /* Closest live enemy (or the boss) to `from`, for player seekers. */
+        static bool nearest_target (Raylib.Vector2 from, EnemyPool enemies, Boss boss,
+                                    out Raylib.Vector2 target) {
+            float best = float.MAX;
+            target = from;
+            bool found = false;
+
+            foreach (var e in enemies.items) {
+                if (!e.active) continue;
+                float dx = e.pos.x - from.x;
+                float dy = e.pos.y - from.y;
+                float d = dx * dx + dy * dy;
+                if (d < best) { best = d; target = e.pos; found = true; }
+            }
+            if (boss.hittable ()) {
+                float dx = boss.pos.x - from.x;
+                float dy = boss.pos.y - from.y;
+                if (dx * dx + dy * dy < best) { target = boss.pos; found = true; }
+            }
+            return found;
         }
 
         public void draw () {

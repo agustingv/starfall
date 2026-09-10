@@ -101,17 +101,60 @@ namespace Starfall {
         }
     }
 
+    /* What a dropped power-up gives the player. */
+    public enum PickupKind {
+        BOMB,      // one screen-clearing special charge
+        SHIELD,    // a few seconds of invulnerability
+        W_SPREAD,  // spread-battery gun
+        W_RAIL,    // railgun
+        W_HOMING;  // seeker gun
+
+        public Raylib.Color colour () {
+            switch (this) {
+                case SHIELD:   return Palette.SKYBLUE;
+                case W_SPREAD: return Palette.ORANGE;
+                case W_RAIL:   return Palette.RAYWHITE;
+                case W_HOMING: return Palette.LIME;
+                default:       return Palette.YELLOW;   // BOMB
+            }
+        }
+
+        public string glyph () {
+            switch (this) {
+                case SHIELD:   return "+";
+                case W_SPREAD: return "W";
+                case W_RAIL:   return "R";
+                case W_HOMING: return "M";
+                default:       return "B";              // BOMB
+            }
+        }
+    }
+
+    namespace Pickups {
+        /* Weighted roll for what a destroyed enemy leaves behind. */
+        public PickupKind random_kind () {
+            int r = Raylib.get_random_value (0, 99);
+            if (r < 30) return PickupKind.BOMB;
+            if (r < 48) return PickupKind.SHIELD;
+            if (r < 66) return PickupKind.W_SPREAD;
+            if (r < 83) return PickupKind.W_RAIL;
+            return PickupKind.W_HOMING;
+        }
+    }
+
     public class Pickup : Object {
         public Raylib.Vector2 pos;
         public float radius;
         public bool  active;
+        public PickupKind kind;
         float wob;
 
-        public void spawn (Raylib.Vector2 at) {
-            pos    = at;
-            radius = 10.0f;
-            wob    = Raylib.get_random_value (0, 628) / 100.0f;
-            active = true;
+        public void spawn (Raylib.Vector2 at, PickupKind kind) {
+            pos        = at;
+            this.kind  = kind;
+            radius     = 10.0f;
+            wob        = Raylib.get_random_value (0, 628) / 100.0f;
+            active     = true;
         }
 
         public void update (float dt) {
@@ -124,11 +167,17 @@ namespace Starfall {
 
         public void draw () {
             float pulse = 0.85f + 0.15f * Math.sinf ((float) Raylib.get_time () * 8.0f);
-            if (Assets.instance ().draw_sprite ("pickup", pos, radius * 2.4f * pulse,
-                                                0.0f, Palette.WHITE))
-                return;
-            Raylib.draw_circle_v (pos, radius * pulse, Palette.SKYBLUE);
-            Raylib.draw_circle_v (pos, radius * 0.4f, Palette.WHITE);
+            var col = kind.colour ();
+
+            if (!Assets.instance ().draw_sprite ("pickup", pos, radius * 2.4f * pulse, 0.0f, col)) {
+                Raylib.draw_circle_v (pos, radius * pulse, col);
+                Raylib.draw_circle_v (pos, radius * 0.4f, Palette.WHITE);
+            }
+
+            string g = kind.glyph ();
+            int w = Raylib.measure_text (g, 14);
+            Raylib.draw_text (g, (int) (pos.x - w / 2.0f), (int) (pos.y - 7.0f), 14,
+                              Palette.BLACK);
         }
     }
 
@@ -147,10 +196,10 @@ namespace Starfall {
                 p.active = false;
         }
 
-        public void spawn (Raylib.Vector2 at) {
+        public void spawn (Raylib.Vector2 at, PickupKind kind) {
             foreach (var p in items) {
                 if (p.active) continue;
-                p.spawn (at);
+                p.spawn (at, kind);
                 return;
             }
         }

@@ -62,9 +62,34 @@ namespace Starfall {
         public SpawnEvent[] events;
         public float last_at;        // time of the final spawn event
 
+        // Formations are handed out in this fixed rotation (offset by section);
+        // only the enemy *kind* per wave is random. Kept here so enemy_count ()
+        // can reconstruct a stage's roster exactly.
+        const Formation[] CYCLE = {
+            Formation.ROW_5, Formation.V_5, Formation.ROW_3,
+            Formation.COLUMNS, Formation.DIAMOND,
+        };
+
+        // Waves per stage. Grows with level + section but caps out, so late
+        // stages stay intense without becoming unwinnable walls of ships.
+        const int MAX_BURSTS = 8;
+
+        static int burst_count (int level, int section) {
+            return int.min (3 + level + section, MAX_BURSTS);
+        }
+
+        /* How many alien craft a stage releases in total (deterministic). */
+        public static int enemy_count (int level, int section) {
+            int total = 0;
+            int bursts = burst_count (level, section);
+            for (int i = 0; i < bursts; i++)
+                total += Formations.size (CYCLE[(i + section) % CYCLE.length]);
+            return total;
+        }
+
         public SectionScript (int level, int section) {
-            int bursts = 3 + level + section;
-            float gap  = clampf (2.9f - 0.13f * level - 0.11f * section, 1.05f, 2.9f);
+            int bursts = burst_count (level, section);
+            float gap  = clampf (3.0f - 0.11f * level - 0.09f * section, 1.4f, 3.0f);
 
             events = new SpawnEvent[bursts];
             float t = 1.0f;
@@ -102,11 +127,7 @@ namespace Starfall {
         }
 
         static void pick (int level, int section, int i, out Formation f, out EnemyKind k) {
-            Formation[] cycle = {
-                Formation.ROW_5, Formation.V_5, Formation.ROW_3,
-                Formation.COLUMNS, Formation.DIAMOND,
-            };
-            f = cycle[(i + section) % cycle.length];
+            f = CYCLE[(i + section) % CYCLE.length];
 
             EnemyKind[] r = roster (level);
             int idx = (i * 2 + section + Raylib.get_random_value (0, 2)) % r.length;
@@ -116,6 +137,17 @@ namespace Starfall {
 
     /* Turns a Formation into actual enemies in the pool. */
     namespace Formations {
+
+        /* Craft per formation - must match the spawn helpers below. */
+        public int size (Formation f) {
+            switch (f) {
+                case Formation.ROW_5:   return 5;
+                case Formation.ROW_3:   return 3;
+                case Formation.V_5:     return 5;
+                case Formation.COLUMNS: return 6;
+                default:                return 4;   // DIAMOND
+            }
+        }
 
         public void spawn (EnemyPool pool, Formation f, EnemyKind kind) {
             switch (f) {
@@ -142,7 +174,7 @@ namespace Starfall {
         }
 
         void columns (EnemyPool pool, EnemyKind kind) {
-            for (int i = 0; i < 4; i++) {
+            for (int i = 0; i < 3; i++) {
                 pool.spawn (Config.SCREEN_W * 0.28f, -40.0f - i * 60.0f, kind);
                 pool.spawn (Config.SCREEN_W * 0.72f, -40.0f - i * 60.0f, kind);
             }

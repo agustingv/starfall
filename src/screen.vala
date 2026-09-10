@@ -51,6 +51,20 @@ namespace Starfall {
                     && Raylib.is_gamepad_button_pressed (0, Raylib.GamepadButton.RIGHT_FACE_DOWN));
         }
 
+        protected static bool nav_left () {
+            return Raylib.is_key_pressed (Raylib.KeyboardKey.LEFT)
+                || Raylib.is_key_pressed (Raylib.KeyboardKey.A)
+                || (Raylib.is_gamepad_available (0)
+                    && Raylib.is_gamepad_button_pressed (0, Raylib.GamepadButton.LEFT_FACE_LEFT));
+        }
+
+        protected static bool nav_right () {
+            return Raylib.is_key_pressed (Raylib.KeyboardKey.RIGHT)
+                || Raylib.is_key_pressed (Raylib.KeyboardKey.D)
+                || (Raylib.is_gamepad_available (0)
+                    && Raylib.is_gamepad_button_pressed (0, Raylib.GamepadButton.LEFT_FACE_RIGHT));
+        }
+
         /* ---- Small drawing helpers ---------------------------------------- */
 
         public static void draw_text_centered (string text, int y, int size, Raylib.Color color) {

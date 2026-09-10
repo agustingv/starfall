@@ -23,6 +23,9 @@ namespace Starfall {
 
         public bool loaded { get; private set; default = false; }
 
+        // Global scale on every effect, driven by the settings screen.
+        public float sfx_volume { get; set; default = 1.0f; }
+
         const int VOICES = 4;   // overlapping instances per effect
 
         const string[] NAMES = {
@@ -111,7 +114,7 @@ namespace Starfall {
             if (pitch_jitter > 0.0f)
                 pitch = 1.0f + (float) Random.double_range (-pitch_jitter, pitch_jitter);
             Raylib.set_sound_pitch (v, pitch);
-            Raylib.set_sound_volume (v, volume);
+            Raylib.set_sound_volume (v, volume * sfx_volume);
             Raylib.play_sound (v);
         }
     }

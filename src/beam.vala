@@ -21,9 +21,19 @@ namespace Starfall {
         float fire_t;
 
         public void reset (Enemy e, Player player) {
-            src      = e;
-            origin   = e.pos;
-            float a  = Math.atan2f (player.pos.y - e.pos.y, player.pos.x - e.pos.x);
+            src = e;
+            arm (e.pos, player);
+        }
+
+        /* Fixed-origin variant (the level-4 boss - no Enemy to track). */
+        public void reset_from (Raylib.Vector2 from, Player player) {
+            src = null;
+            arm (from, player);
+        }
+
+        void arm (Raylib.Vector2 from, Player player) {
+            origin   = from;
+            float a  = Math.atan2f (player.pos.y - from.y, player.pos.x - from.x);
             angle    = clampf (a, 0.55f, 3.1415927f - 0.55f);  // keep it pointing down
             charge_t = CHARGE;
             fire_t   = FIRE;
@@ -113,6 +123,14 @@ namespace Starfall {
             foreach (var b in items) {
                 if (b.active) continue;
                 b.reset (e, player);
+                return;
+            }
+        }
+
+        public void spawn_from (Raylib.Vector2 origin, Player player) {
+            foreach (var b in items) {
+                if (b.active) continue;
+                b.reset_from (origin, player);
                 return;
             }
         }

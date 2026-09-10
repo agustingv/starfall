@@ -212,23 +212,55 @@ def rect(img, x0, y0, x1, y1, rgba):
         hspan(img, y, x0, x1, rgba)
 
 
+# Per-boss silhouette: size, hull profile, and superstructure knobs. Each
+# level's capital ship reads differently at a glance.
+BOSS_SHAPE = {
+    1: dict(  # BLOCKADE WARDEN - a wide, shallow picket platform
+        w=126, h=44, core_frac=0.40, core_h=0.86,
+        hull=[(0.00, 0.22), (0.14, 0.40), (0.34, 0.42), (0.50, 0.38),
+              (0.66, 0.42), (0.84, 0.40), (0.94, 0.22), (1.00, 0.10)],
+        pods=2, pod_x=0.33, pod_span=(0.28, 0.60), barrels=7, barrel_spread=0.78,
+        plates=2, core_r=5, wings=False, ring=False, mega_barrel=False),
+    2: dict(  # BELT CRUSHER - a bulky, rounded mining rig
+        w=100, h=58, core_frac=0.56, core_h=0.82,
+        hull=[(0.00, 0.26), (0.16, 0.46), (0.36, 0.52), (0.52, 0.46),
+              (0.68, 0.54), (0.82, 0.50), (0.92, 0.30), (1.00, 0.16)],
+        pods=2, pod_x=0.34, pod_span=(0.30, 0.72), barrels=3, barrel_spread=0.30,
+        plates=3, core_r=7, wings=False, ring=False, mega_barrel=False),
+    3: dict(  # YARD SOVEREIGN - a tall, narrow arrowhead
+        w=74, h=66, core_frac=0.62, core_h=0.90,
+        hull=[(0.00, 0.10), (0.14, 0.24), (0.34, 0.30), (0.50, 0.24),
+              (0.64, 0.42), (0.78, 0.44), (0.90, 0.24), (1.00, 0.08)],
+        pods=0, pod_x=0.30, pod_span=(0.30, 0.66), barrels=2, barrel_spread=0.24,
+        plates=2, core_r=6, wings=False, ring=False, mega_barrel=False),
+    4: dict(  # SIEGE COLOSSUS - a massive block with one central cannon
+        w=118, h=62, core_frac=0.66, core_h=0.80,
+        hull=[(0.00, 0.24), (0.10, 0.48), (0.24, 0.64), (0.44, 0.66),
+              (0.60, 0.64), (0.78, 0.60), (0.90, 0.42), (1.00, 0.24)],
+        pods=1, pod_x=0.0, pod_span=(0.30, 0.66), barrels=0, barrel_spread=0.30,
+        plates=4, core_r=8, wings=False, ring=False, mega_barrel=True),
+    5: dict(  # ANDROMEDAN THRONE - layered, winged, big glowing core
+        w=98, h=60, core_frac=0.50, core_h=0.82,
+        hull=[(0.00, 0.16), (0.14, 0.32), (0.32, 0.36), (0.50, 0.30),
+              (0.66, 0.42), (0.80, 0.42), (0.90, 0.24), (1.00, 0.12)],
+        pods=3, pod_x=0.34, pod_span=(0.32, 0.62), barrels=3, barrel_spread=0.34,
+        plates=3, core_r=9, wings=True, ring=True, mega_barrel=False),
+}
+
+
 def make_boss(level):
-    """A compact armoured core, two big weapon pods, downward barrels, a
-    glowing reactor. Wider than tall, so it reads as a capital ship."""
+    """One capital ship per level, each a distinct silhouette - see BOSS_SHAPE."""
     pal = f"boss{level}"
     P = PALETTES[pal]
-    w, h = 96, 60
+    S = BOSS_SHAPE[level]
+    w, h = S["w"], S["h"]
     cx = (w - 1) / 2.0
     img = canvas(w, h)
 
     # central hull (nose points down, toward the player)
-    hull = [
-        (0.00, 0.16), (0.14, 0.30), (0.30, 0.34), (0.50, 0.30),
-        (0.66, 0.40), (0.80, 0.40), (0.90, 0.24), (1.00, 0.12),
-    ]
-    core_h = int(h * 0.82)
+    core_h = int(h * S["core_h"])
     core = make_ship(
-        int(w * 0.5), core_h, pal, hull,
+        int(w * S["core_frac"]), core_h, pal, S["hull"],
         nose_up=False,
         canopy_t=0.22, canopy_px=(3, 4),
         engine_frac=0.12, panels=(0.4, 0.62),
@@ -238,36 +270,81 @@ def make_boss(level):
     m = core[:, :, 3] > 0
     img[:core_h, ox:ox + core.shape[1]][m] = core[m]
 
-    # weapon pods
-    for side in (-1, 1):
-        px = cx + side * (w * 0.30)
-        rect(img, px - 9, h * 0.24, px + 9, h * 0.30, P[SHADE])      # top brace
-        rect(img, px - 8, h * 0.30, px + 8, h * 0.66, P[BASE])
-        rect(img, px - 8, h * 0.30, px - 7, h * 0.66,
-             P[LIGHT] if side < 0 else P[SHADE])
-        rect(img, px + 7, h * 0.30, px + 8, h * 0.66,
-             P[LIGHT] if side < 0 else P[SHADE])
-        rect(img, px - 6, h * 0.66, px + 6, h * 0.76, P[SHADE])      # muzzle
-        disc(img, px, h * 0.44, 3, P[GLOW])
-        _set(img, px, h * 0.76, P[GLOW])
-        # strut linking pod to hull
-        rect(img, min(px, cx) + 3, h * 0.42, max(px, cx) - 3, h * 0.46, P[SHADE])
+    ps0, ps1 = S["pod_span"]
+
+    if S["mega_barrel"]:
+        # one huge central cannon, jutting well below the hull
+        rect(img, cx - 7, h * 0.36, cx + 7, h * 0.98, P[SHADE])
+        rect(img, cx - 5, h * 0.36, cx + 5, h * 0.98, P[BASE])
+        rect(img, cx - 5, h * 0.36, cx - 4, h * 0.98, P[LIGHT])
+        _set(img, cx, h * 0.98, P[GLOW])
+        _set(img, cx, h * 0.98 - 1, P[GLOW])
+
+    # side / triple weapon pods
+    if S["pods"] == 3:
+        offsets = (-S["pod_x"], 0.0, S["pod_x"])
+    elif S["pods"] == 2:
+        offsets = (-S["pod_x"], S["pod_x"])
+    else:
+        offsets = ()
+    for fx in offsets:
+        px = cx + fx * w
+        lo, hi = ps0, ps1
+        if level == 2 and fx > 0:          # rig asymmetry: right claw hangs lower
+            lo, hi = ps0 + 0.06, ps1 + 0.10
+        rect(img, px - 8, h * lo - 2, px + 8, h * lo, P[SHADE])       # brace
+        rect(img, px - 8, h * lo, px + 8, h * hi, P[BASE])
+        rect(img, px - 8, h * lo, px - 7, h * hi, P[LIGHT] if fx < 0 else P[SHADE])
+        rect(img, px + 7, h * lo, px + 8, h * hi, P[LIGHT] if fx < 0 else P[SHADE])
+        rect(img, px - 6, h * hi, px + 6, h * hi + h * 0.10, P[SHADE])  # muzzle
+        disc(img, px, h * (lo + hi) / 2.0, 3, P[GLOW])
+        a, b = sorted((px, cx))
+        rect(img, a + 3, h * 0.42, b - 3, h * 0.46, P[SHADE])          # strut
+
+    # sovereign has swept prongs instead of pods
+    if level == 3:
+        for side in (-1, 1):
+            for j in range(int(h * 0.46)):
+                yy = h * 0.30 + j
+                t = j / (h * 0.46)
+                xx = cx + side * (w * 0.26 + t * w * 0.14)
+                _set(img, xx, yy, P[BASE])
+                _set(img, xx + side, yy, P[SHADE])
+            _set(img, cx + side * (w * 0.40), h * 0.76, P[GLOW])
 
     # inner downward barrels
-    for side in (-1, 1):
-        bx = cx + side * (w * 0.12)
+    n = S["barrels"]
+    for i in range(n):
+        frac = 0.0 if n == 1 else (i / (n - 1) - 0.5)
+        bx = cx + frac * (w * S["barrel_spread"])
         rect(img, bx - 2, h * 0.60, bx + 2, h * 0.82, P[SHADE])
         _set(img, bx, h * 0.82, P[GLOW])
         _set(img, bx, h * 0.82 + 1, P[GLOW])
 
-    # armour plates on the hull
-    for dy in (0.30, 0.44):
-        rect(img, cx - 5, h * dy, cx + 5, h * dy + 1, P[SHADE])
+    # winglets sweeping up off the throne
+    if S["wings"]:
+        for side in (-1, 1):
+            for j in range(7):
+                xx = cx + side * (w * 0.22 + j * 3)
+                yy = h * 0.36 - j * 2
+                _set(img, xx, yy, P[LIGHT])
+                _set(img, xx, yy + 1, P[BASE])
+                _set(img, xx, yy + 2, P[SHADE])
+
+    # armour plates banding the hull
+    for i in range(S["plates"]):
+        dy = 0.30 + i * (0.34 / max(1, S["plates"]))
+        rect(img, cx - 5 - i, h * dy, cx + 5 + i, h * dy + 1, P[SHADE])
 
     # reactor core
-    disc(img, cx, h * 0.40, 6, P[SHADE])
-    disc(img, cx, h * 0.40, 4, P[GLOW])
-    disc(img, cx, h * 0.40, 2, (255, 255, 255, 255))
+    r = S["core_r"]
+    disc(img, cx, h * 0.40, r + 1, P[SHADE])
+    disc(img, cx, h * 0.40, r - 1, P[GLOW])
+    disc(img, cx, h * 0.40, max(1, r - 3), (255, 255, 255, 255))
+    if S["ring"]:
+        for a in range(0, 360, 24):
+            rad = math.radians(a)
+            _set(img, cx + math.cos(rad) * (r + 4), h * 0.40 + math.sin(rad) * (r + 4), P[GLOW])
 
     outline_pass(img, P[OUTLINE])
     return img

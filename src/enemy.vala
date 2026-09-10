@@ -77,53 +77,54 @@ namespace Starfall {
                 case EnemyKind.GRUNT:
                     radius = 14.0f; hp = 1.0f; score_value = 100;
                     vel.y = 70.0f;  sway_amp = 28.0f; sway_freq = 1.4f;
-                    weapon = EnemyWeapon.BOLT;   fire_interval = 2.4f;
+                    weapon = EnemyWeapon.BOLT;   fire_interval = 2.7f;
                     break;
                 case EnemyKind.DARTER:
                     radius = 11.0f; hp = 1.0f; score_value = 150;
                     vel.y = 135.0f; sway_amp = 10.0f; sway_freq = 3.0f;
-                    weapon = EnemyWeapon.BURST;  fire_interval = 2.8f;
+                    weapon = EnemyWeapon.BURST;  fire_interval = 3.1f;
                     break;
                 case EnemyKind.WEAVER:
                     radius = 15.0f; hp = 2.0f; score_value = 200;
                     vel.y = 40.0f;  sway_amp = 120.0f; sway_freq = 1.7f;
-                    weapon = EnemyWeapon.PAIR;   fire_interval = 2.2f;
+                    weapon = EnemyWeapon.PAIR;   fire_interval = 2.8f;
                     break;
                 case EnemyKind.SENTINEL:
                     radius = 16.0f; hp = 3.0f; score_value = 300;
                     vel.y = 95.0f;  sway_amp = 6.0f; sway_freq = 1.0f;
                     hold_y = 96.0f + Raylib.get_random_value (0, 80);
                     base_vy = 70.0f;
-                    weapon = EnemyWeapon.BEAM;   fire_interval = 2.6f;
+                    weapon = EnemyWeapon.BEAM;   fire_interval = 3.2f;
                     break;
                 case EnemyKind.BRUTE:
                     radius = 20.0f; hp = 4.0f; score_value = 400;
                     vel.y = 45.0f;  sway_amp = 42.0f; sway_freq = 0.8f;
-                    weapon = EnemyWeapon.SPREAD; fire_interval = 2.0f;
+                    weapon = EnemyWeapon.SPREAD; fire_interval = 2.7f;
                     break;
                 case EnemyKind.HUNTER:
                     radius = 14.0f; hp = 2.0f; score_value = 300;
                     vel.y = 52.0f;  sway_amp = 8.0f; sway_freq = 1.6f;
                     chase_k = 70.0f;
-                    weapon = EnemyWeapon.MISSILE; fire_interval = 3.1f;
+                    weapon = EnemyWeapon.MISSILE; fire_interval = 3.6f;
                     break;
                 case EnemyKind.RACER:
                     radius = 11.0f; hp = 1.0f; score_value = 220;
                     vel.y = 205.0f; sway_amp = 0.0f; sway_freq = 0.0f;
                     free_x = true;
                     vel.x = (x < Config.SCREEN_W / 2.0f) ? 150.0f : -150.0f;
-                    weapon = EnemyWeapon.DIVE_BOLTS; fire_interval = 1.1f;
+                    weapon = EnemyWeapon.DIVE_BOLTS; fire_interval = 1.9f;
                     break;
                 default: // WARDEN
                     radius = 22.0f; hp = 6.0f; score_value = 700;
                     vel.y = 44.0f;  sway_amp = 64.0f; sway_freq = 0.7f;
                     chase_k = 24.0f;
-                    weapon = EnemyWeapon.MISSILE_SPREAD; fire_interval = 2.4f;
+                    weapon = EnemyWeapon.MISSILE_SPREAD; fire_interval = 3.1f;
                     break;
             }
 
-            hp_max     = hp;
-            fire_timer = fire_interval * 0.5f;
+            hp_max = hp;
+            // Stagger the first shot so a fresh wave doesn't volley in unison.
+            fire_timer = fire_interval * (0.75f + Raylib.get_random_value (0, 60) / 100.0f);
         }
 
         /* Horizontal tracking - kinds with chase_k drift toward the player. */
@@ -195,7 +196,7 @@ namespace Starfall {
                     break;
                 case EnemyWeapon.MISSILE_SPREAD:
                     if ((alt++ & 1) == 0) fire_missiles (bullets, player, 2);
-                    else                  fire_bolts (bullets, player, 5, 0.32f, 160.0f);
+                    else                  fire_bolts (bullets, player, 4, 0.30f, 160.0f);
                     break;
             }
         }
@@ -227,8 +228,8 @@ namespace Starfall {
 
         void fire_dive (BulletPool bullets) {
             float vx = vel.x * 0.35f;
-            for (int i = -1; i <= 1; i++)
-                bullets.spawn ({ pos.x + i * 6.0f, pos.y + radius },
+            for (int i = 0; i < 2; i++)
+                bullets.spawn ({ pos.x + (i == 0 ? -5.0f : 5.0f), pos.y + radius },
                                { vx, 300.0f }, false, 3.5f, Palette.ORANGE);
             Audio.instance ().play ("shot_enemy", 0.10f, 0.8f);
         }

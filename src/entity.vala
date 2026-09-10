@@ -17,8 +17,9 @@ namespace Starfall {
         public const int LEVELS             = 5;
         public const int SECTIONS_PER_LEVEL = 3;
 
-        // Percent chance a destroyed enemy drops a special-weapon recharge.
-        public const int SPECIAL_DROP_PCT = 12;
+        // Percent chance a destroyed enemy drops a power-up (weapon / shield /
+        // bomb recharge). The kind is then rolled in Pickups.random_kind ().
+        public const int POWERUP_DROP_PCT = 12;
     }
 
     /* A per-frame snapshot of what the player is asking for, already merged

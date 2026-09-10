@@ -125,6 +125,12 @@ namespace Starfall {
         public override void handle_input () {
             bool in_fight = (phase == Phase.SECTION || phase == Phase.BOSS);
 
+            // F10: dev-only invulnerability toggle (walk the campaign / ending).
+            if (Raylib.is_key_pressed (Raylib.KeyboardKey.F10)) {
+                player.godmode = !player.godmode;
+                Audio.instance ().play ("ui_select", 0.0f, player.godmode ? 1.4f : 0.7f);
+            }
+
             if (in_fight && paused) {
                 handle_pause_menu ();
                 return;
@@ -254,10 +260,14 @@ namespace Starfall {
             }
         }
 
-        /* Fire the special: one homing missile per enemy on screen (capped by
-         * the pool), fanned upward, plus a few unguided ones for stragglers. */
+        /* Fire the special / bomb: wipe every hostile shot on screen, then send
+         * one homing missile per enemy (capped by the pool), fanned upward,
+         * plus a few unguided ones for stragglers. */
         void launch_special () {
             Audio.instance ().play ("special");
+
+            bullets.clear_enemy ();
+            beams.clear ();
 
             int launched = 0;
             foreach (var e in enemies.items) {
@@ -358,7 +368,7 @@ namespace Starfall {
         }
 
         void run_boss (float dt) {
-            boss.update (dt, bullets, player);
+            boss.update (dt, bullets, beams, player);
             step_world (dt);
 
             if (player.alive && !boss.active) {
@@ -372,7 +382,7 @@ namespace Starfall {
             Input input = Player.read_input ();
             player.update (dt, input, bullets);
             enemies.update (dt, bullets, beams, player);
-            bullets.update (dt, player);
+            bullets.update (dt, player, enemies, boss);
             beams.update (dt);
             missiles.update (dt);
             pickups.update (dt);
@@ -398,8 +408,7 @@ namespace Starfall {
 
                 if (boss.hittable ()
                     && Raylib.check_collision_circles (b.pos, b.radius, boss.pos, boss.radius)) {
-                    b.active = false;
-                    boss.damage (1.0f);
+                    boss.damage (b.damage);
                     fx.spawn ({ b.pos.x, b.pos.y }, 14.0f);
                     if (!boss.active) {
                         score += 500 * level;
@@ -409,24 +418,32 @@ namespace Starfall {
                                       boss.radius * 1.4f);
                         Audio.instance ().play ("explosion_big");
                     }
+                    b.active = false;   // one big target - the slug stops here
                     continue;
                 }
 
                 foreach (var e in enemies.items) {
                     if (!e.active) continue;
-                    if (Raylib.check_collision_circles (b.pos, b.radius, e.pos, e.radius)) {
-                        b.active = false;
-                        e.hp -= 1.0f;
-                        if (e.hp <= 0.0f) {
-                            e.active = false;
-                            score += e.score_value;
-                            fx.spawn (e.pos, e.radius * 3.2f);
-                            Audio.instance ().play ("explosion_small", 0.12f);
-                            if (Raylib.get_random_value (0, 99) < Config.SPECIAL_DROP_PCT)
-                                pickups.spawn (e.pos);
+                    if (!Raylib.check_collision_circles (b.pos, b.radius, e.pos, e.radius))
+                        continue;
+
+                    hurt_enemy (e, b.damage);
+
+                    if (b.aoe > 0.0f) {   // spread battery: splash the neighbours
+                        foreach (var e2 in enemies.items) {
+                            if (!e2.active || e2 == e) continue;
+                            if (Raylib.check_collision_circles (b.pos, b.aoe, e2.pos, e2.radius))
+                                hurt_enemy (e2, 1.0f);
                         }
+                        fx.spawn (b.pos, b.aoe * 1.5f);
+                        b.active = false;
                         break;
                     }
+
+                    if (b.pierce > 0) { b.pierce--; continue; }   // railgun passes through
+
+                    b.active = false;
+                    break;
                 }
             }
 
@@ -486,23 +503,17 @@ namespace Starfall {
                 }
             }
 
-            // Recharge pickups vs player (grabbable even while immune).
+            // Power-up pickups vs player (grabbable even while immune).
             foreach (var p in pickups.items) {
                 if (!p.active) continue;
-                if (Raylib.check_collision_circles (p.pos, p.radius,
-                                                    player.pos, player.radius + 6.0f)) {
-                    p.active = false;
-                    if (player.special_charges < Player.SPECIAL_MAX) {
-                        player.add_special_charge ();
-                        Audio.instance ().play ("powerup");
-                    } else {
-                        score += 200;
-                        Audio.instance ().play ("powerup", 0.0f, 0.6f);
-                    }
-                }
+                if (!Raylib.check_collision_circles (p.pos, p.radius,
+                                                     player.pos, player.radius + 6.0f))
+                    continue;
+                p.active = false;
+                collect_pickup (p.kind);
             }
 
-            if (player.invulnerable) return;
+            if (player.damage_immune) return;
 
             if (beams.strike (player)) {
                 player.hit ();
@@ -529,6 +540,49 @@ namespace Starfall {
             if (boss.hittable ()
                 && Raylib.check_collision_circles (boss.pos, boss.radius, player.pos, player.radius)) {
                 player.hit ();
+            }
+        }
+
+        /* Apply `dmg` to an enemy; score / fx / drop it if that finishes it. */
+        void hurt_enemy (Enemy e, float dmg) {
+            e.hp -= dmg;
+            if (e.hp > 0.0f) return;
+
+            e.active = false;
+            score += e.score_value;
+            fx.spawn (e.pos, e.radius * 3.2f);
+            Audio.instance ().play ("explosion_small", 0.12f);
+            if (Raylib.get_random_value (0, 99) < Config.POWERUP_DROP_PCT)
+                pickups.spawn (e.pos, Pickups.random_kind ());
+        }
+
+        void collect_pickup (PickupKind kind) {
+            switch (kind) {
+                case PickupKind.SHIELD:
+                    player.grant_shield ();
+                    Audio.instance ().play ("powerup");
+                    break;
+                case PickupKind.W_SPREAD:
+                    player.give_weapon (WeaponType.SPREAD);
+                    Audio.instance ().play ("powerup");
+                    break;
+                case PickupKind.W_RAIL:
+                    player.give_weapon (WeaponType.RAIL);
+                    Audio.instance ().play ("powerup");
+                    break;
+                case PickupKind.W_HOMING:
+                    player.give_weapon (WeaponType.HOMING);
+                    Audio.instance ().play ("powerup");
+                    break;
+                default: // BOMB
+                    if (player.special_charges < Player.SPECIAL_MAX) {
+                        player.add_special_charge ();
+                        Audio.instance ().play ("powerup");
+                    } else {
+                        score += 200;
+                        Audio.instance ().play ("powerup", 0.0f, 0.6f);
+                    }
+                    break;
             }
         }
 
@@ -630,7 +684,34 @@ namespace Starfall {
                                       Palette.SKYBLUE);
             }
 
+            // Active weapon power-up + its remaining time.
+            if (player.weapon != WeaponType.BLASTER) {
+                Raylib.draw_text (player.weapon.label (), 20, 60, 14, Palette.ORANGE);
+                int bw = 104;
+                Raylib.draw_rectangle (20, 78, bw, 4, Raylib.fade (Palette.WHITE, 0.20f));
+                Raylib.draw_rectangle (20, 78, (int) (bw * player.weapon_frac), 4, Palette.ORANGE);
+            }
+
+            // Shield timer, mirrored on the right.
+            if (player.shielded) {
+                string s = "SHIELD";
+                int sw = Raylib.measure_text (s, 14);
+                Raylib.draw_text (s, Config.SCREEN_W - 20 - sw, 60, 14, Palette.SKYBLUE);
+                int bw = 104;
+                Raylib.draw_rectangle (Config.SCREEN_W - 20 - bw, 78, bw, 4,
+                                       Raylib.fade (Palette.WHITE, 0.20f));
+                Raylib.draw_rectangle (Config.SCREEN_W - 20 - bw, 78,
+                                       (int) (bw * player.shield_frac), 4, Palette.SKYBLUE);
+            }
+
             Raylib.draw_fps (12, Config.SCREEN_H - 26);
+
+            if (player.godmode) {
+                string t = "GODMODE";
+                int gw = Raylib.measure_text (t, 16);
+                Raylib.draw_text (t, Config.SCREEN_W - 12 - gw, Config.SCREEN_H - 26, 16,
+                                  Palette.MAGENTA);
+            }
         }
 
         void draw_level_intro () {

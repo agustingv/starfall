@@ -41,6 +41,8 @@ sources = files(
   'src/title_screen.vala',
   'src/play_screen.vala',
   'src/score_screen.vala',
+  'src/settings_screen.vala',
+  'src/settings.vala',
   'src/level.vala',
   'src/boss.vala',
   'src/scores.vala',
