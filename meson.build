@@ -34,6 +34,20 @@ add_project_arguments(
   language : 'vala',
 )
 
+# Vala's codegen leaves unused bookkeeping variables (foreach bounds, temps)
+# in the generated C for essentially every loop, and every _get_type()
+# function's g_once_init_enter() expands to a glib gatomic.h macro that
+# itself triggers -Wdiscarded-qualifiers - both are noise from generated
+# code / system headers, not bugs in the .vala sources, so silence them.
+add_project_arguments(
+  [
+    '-Wno-unused-variable',
+    '-Wno-unused-but-set-variable',
+    '-Wno-discarded-qualifiers',
+  ],
+  language : 'c',
+)
+
 sources = files(
   'src/main.vala',
   'src/game.vala',

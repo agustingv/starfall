@@ -426,6 +426,48 @@ def make_pickup():
 
 
 # ---------------------------------------------------------------------------
+# cheap deterministic value noise, for organic (non-elliptical) coastlines
+# and streaky cloud bands on the Earth sprite
+# ---------------------------------------------------------------------------
+
+
+def clamp01(v):
+    return 0.0 if v < 0.0 else (1.0 if v > 1.0 else v)
+
+
+def _hash01(ix, iy, seed):
+    n = (ix * 374761393 + iy * 668265263 + seed * 2147483647) & 0xFFFFFFFF
+    n = (n ^ (n >> 13)) * 1274126177 & 0xFFFFFFFF
+    n = n ^ (n >> 16)
+    return (n & 0xFFFFFFFF) / 4294967295.0
+
+
+def _vnoise(x, y, seed):
+    x0, y0 = math.floor(x), math.floor(y)
+    sx, sy = x - x0, y - y0
+    x0i, y0i = int(x0), int(y0)
+    n00 = _hash01(x0i, y0i, seed)
+    n10 = _hash01(x0i + 1, y0i, seed)
+    n01 = _hash01(x0i, y0i + 1, seed)
+    n11 = _hash01(x0i + 1, y0i + 1, seed)
+    sx = sx * sx * (3 - 2 * sx)
+    sy = sy * sy * (3 - 2 * sy)
+    a = n00 + (n10 - n00) * sx
+    b = n01 + (n11 - n01) * sx
+    return a + (b - a) * sy
+
+
+def _fbm(x, y, seed, octaves=4, lac=2.0, gain=0.5):
+    amp, freq, total, norm = 0.5, 1.0, 0.0, 0.0
+    for i in range(octaves):
+        total += amp * _vnoise(x * freq, y * freq, seed * 97 + i * 131)
+        norm += amp
+        amp *= gain
+        freq *= lac
+    return total / norm
+
+
+# ---------------------------------------------------------------------------
 # backdrop planets - one distant world per level, drawn behind the starfield
 # ---------------------------------------------------------------------------
 
@@ -453,10 +495,13 @@ def _planet_base(kind, nx, ny):
         v = 0.5 + 0.5 * math.sin(nx * 4.0 + 1.3) * math.sin(ny * 3.3)
         g = 138 + 20 * v
         return [g, g + 4, g + 14]
-    # earth
-    if ny < -0.78:
-        return [224, 232, 238]          # north polar cap
-    return [38, 92, 148]                # ocean
+    # earth: deep polar ocean warming towards the equator, capped with ice
+    # at both poles (soft gradient, not a hard-edged blot).
+    polar = clamp01((abs(ny) - 0.72) / 0.28)
+    eq    = 1.0 - min(1.0, abs(ny) / 0.92)
+    deep, warm, ice = (24, 66, 112), (34, 108, 150), (234, 240, 246)
+    base = [deep[i] + (warm[i] - deep[i]) * (0.4 * eq) for i in range(3)]
+    return [base[i] + (ice[i] - base[i]) * polar for i in range(3)]
 
 
 def make_planet(kind, seed):
@@ -526,17 +571,51 @@ def make_planet(kind, seed):
             blot(bx, by, cr * 1.35, cr * 1.35, [178, 180, 190], hard=0.6)
             blot(bx, by, cr, cr, [104, 106, 118], hard=0.5)
 
-    else:  # earth
-        cont = [[56, 118, 70], [92, 128, 74], [132, 112, 78]]
-        for _ in range(7):
-            blot(c + rng.uniform(-0.8 * R, 0.8 * R), c + rng.uniform(-0.7 * R, 0.7 * R),
-                 rng.uniform(0.22 * R, 0.5 * R), rng.uniform(0.16 * R, 0.4 * R),
-                 cont[rng.randrange(len(cont))], hard=0.12)
-        blot(c, c + 0.86 * R, 0.5 * R, 0.2 * R, [228, 234, 240], hard=0.2)   # south cap
-        for _ in range(9):
-            blot(c + rng.uniform(-R, R), c + rng.uniform(-0.9 * R, 0.9 * R),
-                 rng.uniform(0.18 * R, 0.42 * R), rng.uniform(0.07 * R, 0.14 * R),
-                 [236, 240, 244], hard=0.08)                                 # clouds
+    else:  # earth - noise-warped continents with ragged coasts, plus clouds
+        bumps = [(-0.58, -0.12, 0.32), (0.02, -0.42, 0.28),
+                 (0.32, 0.08, 0.24), (0.66, 0.46, 0.15)]
+        trop, temp, arid, sand = (58, 122, 60), (108, 122, 66), (176, 146, 96), (214, 202, 160)
+        water = mask.copy()
+
+        for y in range(S):
+            for x in range(S):
+                if not mask[y, x]:
+                    continue
+                nx, ny = (x - c) / R, (y - c) / R
+                if abs(ny) > 0.86:
+                    continue                        # under the polar ice, no coast to draw
+                bump = max(1.0 - math.hypot(nx - bx, ny - by) / br for bx, by, br in bumps)
+                n = _fbm(nx * 3.4 + 11.3, ny * 3.4 - 7.1, seed, octaves=4)
+                field = bump * 0.62 + (n - 0.5) * 0.9
+                if field <= 0.30:
+                    continue
+                lat  = abs(ny)
+                terr = _fbm(nx * 2.0 + 50.0, ny * 2.0 + 50.0, seed + 5, octaves=3)
+                land = trop if lat < 0.30 else (arid if terr > 0.58 else temp)
+                shore = clamp01(1.0 - (field - 0.30) / 0.09)
+                alb[y, x] = [land[i] * (1.0 - shore) + sand[i] * shore for i in range(3)]
+                water[y, x] = False
+
+        for _ in range(16):                                          # small islands
+            ang = rng.uniform(0, math.tau)
+            rad = rng.uniform(0.35, 0.92) * R
+            bx, by = c + math.cos(ang) * rad, c + math.sin(ang) * rad
+            if abs((by - c) / R) > 0.85:
+                continue
+            blot(bx, by, rng.uniform(1.2, 2.6), rng.uniform(1.2, 2.6), trop, hard=0.5)
+
+        cloud_col = np.array([246, 248, 250], np.float32)
+        for y in range(S):
+            for x in range(S):
+                if not mask[y, x]:
+                    continue
+                nx, ny = (x - c) / R, (y - c) / R
+                band = _fbm(nx * 2.2 + 91.0, ny * 5.5 - 91.0, seed + 9, octaves=3)
+                wisp = _fbm(nx * 6.0 - 33.0, ny * 6.0 + 33.0, seed + 17, octaves=2)
+                a = clamp01((band + 0.30 * wisp - 0.70) / 0.20)
+                if a <= 0.0:
+                    continue
+                alb[y, x] = alb[y, x] * (1.0 - a) + cloud_col * a
 
     # sphere lighting: diffuse from the upper-left + limb darkening ---------
     lx, ly, lz = -0.50, -0.44, 0.75
@@ -553,6 +632,11 @@ def make_planet(kind, seed):
             if d2 > 0.9 and lam > 0.35:                 # lit-limb rim light
                 t = (d2 - 0.9) / 0.1
                 r, g, b = r + 60 * t, g + 70 * t, b + 85 * t
+            if kind == "earth" and water[y, x]:          # sun glint on the ocean
+                gd = math.hypot(nx - lx, ny - ly)
+                if gd < 0.16 and nz > 0.2:
+                    t = (1.0 - gd / 0.16) ** 2 * min(1.0, nz * 1.3)
+                    r, g, b = r + 95 * t, g + 82 * t, b + 55 * t
             img[y, x] = (int(max(0, min(255, r))), int(max(0, min(255, g))),
                          int(max(0, min(255, b))), 255)
 

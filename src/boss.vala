@@ -383,7 +383,10 @@ namespace Starfall {
         /* ---- Draw --------------------------------------------------------- */
 
         public void draw () {
-            if (Assets.instance ().draw_sprite (@"boss_$(level)", pos, radius * 2.6f, 0.0f,
+            // boss_1's sprite is unusually wide, so it needs a smaller
+            // height scale than the other bosses to end up a comparable size.
+            float sprite_scale = (level == 1) ? 1.5f : 2.6f;
+            if (Assets.instance ().draw_sprite (@"boss_$(level)", pos, radius * sprite_scale, 0.0f,
                                            Palette.WHITE))
                 return;
 

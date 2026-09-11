@@ -661,27 +661,25 @@ namespace Starfall {
         }
 
         void draw_hud () {
-            Raylib.draw_text ("SCORE %08d".printf (score), 12, 12, 20, Palette.RAYWHITE);
+            string score_s = "SCORE %08d".printf (score);
+            Raylib.draw_text (score_s, 12, 12, 20, Palette.RAYWHITE);
 
             string tag = (phase == Phase.BOSS || phase == Phase.BOSS_INTRO)
                 ? @"LEVEL $(level)  BOSS"
                 : @"LEVEL $(level)-$(section)";
             int tw = Raylib.measure_text (tag, 18);
-            Raylib.draw_text (tag, (Config.SCREEN_W - tw) / 2, 14, 18, Palette.SKYBLUE);
+            // Keep the tag clear of the score text - it can run wide (eg "BOSS").
+            int score_right = 12 + Raylib.measure_text (score_s, 20);
+            int tag_x = int.max ((Config.SCREEN_W - tw) / 2, score_right + 10);
+            Raylib.draw_text (tag, tag_x, 14, 18, Palette.SKYBLUE);
 
             for (int i = 0; i < player.lives; i++) {
                 float x = Config.SCREEN_W - 22.0f - i * 20.0f;
-                Raylib.draw_triangle ({ x, 14.0f }, { x - 7.0f, 30.0f }, { x + 7.0f, 30.0f },
-                                      Palette.LIME);
-            }
-
-            // Special-weapon charges (cyan diamonds under the score).
-            for (int i = 0; i < player.special_charges; i++) {
-                float x = 20.0f + i * 22.0f;
-                Raylib.draw_triangle ({ x, 38.0f }, { x - 8.0f, 46.0f }, { x + 8.0f, 46.0f },
-                                      Palette.SKYBLUE);
-                Raylib.draw_triangle ({ x - 8.0f, 46.0f }, { x, 54.0f }, { x + 8.0f, 46.0f },
-                                      Palette.SKYBLUE);
+                Raylib.Vector2 ship_pos = { x, 22.0f };
+                if (!Assets.instance ().draw_sprite ("player", ship_pos, 20.0f, 0.0f, Palette.WHITE)) {
+                    Raylib.draw_triangle ({ x, 14.0f }, { x - 7.0f, 30.0f }, { x + 7.0f, 30.0f },
+                                          Palette.LIME);
+                }
             }
 
             // Active weapon power-up + its remaining time.
@@ -704,7 +702,18 @@ namespace Starfall {
                                        (int) (bw * player.shield_frac), 4, Palette.SKYBLUE);
             }
 
-            Raylib.draw_fps (12, Config.SCREEN_H - 26);
+            // Special-weapon charges (missile icons, bottom-left).
+            for (int i = 0; i < player.special_charges; i++) {
+                float x = 20.0f + i * 22.0f;
+                float y = Config.SCREEN_H - 20.0f;
+                Raylib.Vector2 missile_pos = { x, y };
+                if (!Assets.instance ().draw_sprite ("missile", missile_pos, 18.0f, 0.0f, Palette.WHITE)) {
+                    Raylib.draw_triangle ({ x, y - 8.0f }, { x - 8.0f, y },     { x + 8.0f, y },
+                                          Palette.SKYBLUE);
+                    Raylib.draw_triangle ({ x - 8.0f, y }, { x, y + 8.0f }, { x + 8.0f, y },
+                                          Palette.SKYBLUE);
+                }
+            }
 
             if (player.godmode) {
                 string t = "GODMODE";
